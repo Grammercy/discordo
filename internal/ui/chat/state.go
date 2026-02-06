@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"slices"
 
@@ -58,7 +59,13 @@ func (v *View) OpenState(token string) error {
 		if err := v.state.Open(context.TODO()); err != nil {
 			slog.Error("failed to open state", "err", err)
 			v.app.QueueUpdateDraw(func() {
-				v.app.Stop()
+				v.showConfirmModal(
+					fmt.Sprintf("Failed to connect to Discord:\n%s", err),
+					[]string{"Quit"},
+					func(_ string) {
+						v.app.Stop()
+					},
+				)
 			})
 		}
 	}()
