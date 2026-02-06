@@ -2,26 +2,38 @@
 package markdown
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/ayn2op/discordo/internal/config"
+	"github.com/ayn2op/discordo/internal/consts"
 	"github.com/diamondburned/ningen/v3/discordmd"
 	"github.com/yuin/goldmark/ast"
 	gmr "github.com/yuin/goldmark/renderer"
 )
 
+var downloading sync.Map
+
 type Renderer struct {
-	theme config.MessagesListTheme
+	theme   config.MessagesListTheme
+	isKitty bool
 
 	listIx     *int
 	listNested int
 }
 
 func NewRenderer(theme config.MessagesListTheme) *Renderer {
-	return &Renderer{theme: theme}
+	isKitty := strings.Contains(os.Getenv("TERM"), "kitty")
+	return &Renderer{theme: theme, isKitty: isKitty}
 }
 
 func (r *Renderer) AddOptions(opts ...gmr.Option) {}
@@ -41,6 +53,8 @@ func (r *Renderer) Render(w io.Writer, source []byte, node ast.Node) error {
 			r.renderAutoLink(w, node, entering, source)
 		case *ast.Link:
 			r.renderLink(w, node, entering)
+		case *ast.Image:
+			return r.renderImage(w, node, entering)
 		case *ast.List:
 			r.renderList(w, node, entering)
 		case *ast.ListItem:
@@ -109,6 +123,69 @@ func (r *Renderer) renderLink(w io.Writer, node *ast.Link, entering bool) {
 		fmt.Fprintf(w, "[%s:%s::%s]", fg, bg, node.Destination)
 	} else {
 		io.WriteString(w, "[-:-::-]")
+	}
+}
+
+func (r *Renderer) renderImage(w io.Writer, node *ast.Image, entering bool) (ast.WalkStatus, error) {
+	if !r.isKitty {
+		if entering {
+			io.WriteString(w, "[Image: ")
+		} else {
+			io.WriteString(w, "]")
+		}
+		return ast.WalkContinue, nil
+	}
+
+	if !entering {
+		return ast.WalkContinue, nil
+	}
+
+	url := string(node.Destination)
+	hash := sha256.Sum256(node.Destination)
+	ext := filepath.Ext(url)
+	if ext == "" {
+		ext = ".png"
+	}
+	filename := hex.EncodeToString(hash[:]) + ext
+	path := filepath.Join(consts.CacheDir(), "images", filename)
+
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		io.WriteString(w, "[Image Error]")
+		return ast.WalkSkipChildren, nil
+	}
+
+	if _, err := os.Stat(path); err == nil {
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			io.WriteString(w, "[Image Error]")
+			return ast.WalkSkipChildren, nil
+		}
+
+		encodedPath := base64.StdEncoding.EncodeToString([]byte(absPath))
+		io.WriteString(w, fmt.Sprintf("\x1b_Ga=T,t=f;%s\x1b\\", encodedPath))
+		return ast.WalkSkipChildren, nil
+	} else {
+		if _, ok := downloading.LoadOrStore(url, true); !ok {
+			go func() {
+				defer downloading.Delete(url)
+
+				resp, err := http.Get(url)
+				if err != nil {
+					return
+				}
+				defer resp.Body.Close()
+
+				f, err := os.Create(path)
+				if err != nil {
+					return
+				}
+				defer f.Close()
+
+				io.Copy(f, resp.Body)
+			}()
+		}
+		io.WriteString(w, "[Image Downloading...]")
+		return ast.WalkSkipChildren, nil
 	}
 }
 
