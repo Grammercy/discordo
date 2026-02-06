@@ -53,7 +53,17 @@ func (v *View) OpenState(token string) error {
 	}
 
 	v.state.OnRequest = append(v.state.OnRequest, httputil.WithHeaders(http.Headers()), v.onRequest)
-	return v.state.Open(context.TODO())
+
+	go func() {
+		if err := v.state.Open(context.TODO()); err != nil {
+			slog.Error("failed to open state", "err", err)
+			v.app.QueueUpdateDraw(func() {
+				v.app.Stop()
+			})
+		}
+	}()
+
+	return nil
 }
 
 func (v *View) CloseState() error {
