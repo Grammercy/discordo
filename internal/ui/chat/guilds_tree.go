@@ -161,6 +161,7 @@ func (gt *guildsTree) onSelected(node *tview.TreeNode) {
 
 		ui.SortGuildChannels(channels)
 		gt.createChannelNodes(node, channels)
+		node.SetExpanded(true)
 	case discord.ChannelID:
 		channel, err := gt.chatView.state.Cabinet.Channel(ref)
 		if err != nil {
@@ -191,6 +192,7 @@ func (gt *guildsTree) onSelected(node *tview.TreeNode) {
 			for _, thread := range forumThreads {
 				gt.createChannelNode(node, thread)
 			}
+			node.SetExpanded(true)
 			return
 		}
 
@@ -237,6 +239,7 @@ func (gt *guildsTree) onSelected(node *tview.TreeNode) {
 		for _, c := range channels {
 			gt.createChannelNode(node, c)
 		}
+		node.SetExpanded(true)
 	}
 }
 
