@@ -1,32 +1,27 @@
 import sys
 
-path = "internal/ui/chat/state.go"
-with open(path, "r") as f:
+with open('internal/ui/chat/state.go', 'r') as f:
     content = f.read()
 
-old_code = """	v.state.OnRequest = append(v.state.OnRequest, httputil.WithHeaders(http.Headers()), v.onRequest)
-	return v.state.Open(context.TODO())
-}"""
-
-new_code = """	v.state.OnRequest = append(v.state.OnRequest, httputil.WithHeaders(http.Headers()), v.onRequest)
-
-	go func() {
-		if err := v.state.Open(context.TODO()); err != nil {
-			slog.Error("failed to open state", "err", err)
-			v.app.QueueUpdateDraw(func() {
+search_block = """			v.app.QueueUpdateDraw(func() {
 				v.app.Stop()
-			})
-		}
-	}()
+			})"""
 
-	return nil
-}"""
+replace_block = """			v.app.QueueUpdateDraw(func() {
+				v.showConfirmModal(
+					fmt.Sprintf("Failed to connect to Discord:\n%s", err),
+					[]string{"Quit"},
+					func(_ string) {
+						v.app.Stop()
+					},
+				)
+			})"""
 
-if old_code in content:
-    content = content.replace(old_code, new_code)
-    with open(path, "w") as f:
+if search_block in content:
+    content = content.replace(search_block, replace_block)
+    with open('internal/ui/chat/state.go', 'w') as f:
         f.write(content)
-    print("Successfully modified state.go")
+    print("Successfully replaced block.")
 else:
-    print("Could not find the code block to replace")
+    print("Could not find block to replace.")
     sys.exit(1)
